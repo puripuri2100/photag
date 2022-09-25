@@ -9,6 +9,7 @@ pub fn compression(path: &str, quality: f32, size: u32) -> Result<Vec<u8>> {
   let raw_data = fs::read(path)?;
   let decomp = Decompress::with_markers(ALL_MARKERS).from_mem(&raw_data)?;
 
+  #[allow(clippy::needless_collect)]
   // markers の中に Exif 情報がある
   let markers: Vec<(Marker, Vec<u8>)> = decomp
     .markers()
@@ -26,7 +27,7 @@ pub fn compression(path: &str, quality: f32, size: u32) -> Result<Vec<u8>> {
   // デコードされたデータの取得
   let data = decomp_started
     .read_scanlines::<[u8; 3]>()
-    .ok_or(anyhow!("read_scanlines error"))?
+    .ok_or_else(|| anyhow!("read_scanlines error"))?
     .iter()
     .flatten()
     .cloned()
@@ -36,8 +37,8 @@ pub fn compression(path: &str, quality: f32, size: u32) -> Result<Vec<u8>> {
   decomp_started.finish_decompress();
 
   // image crate の DynamicImage に変換
-  let image_buffer =
-    RgbImage::from_raw(width as u32, height as u32, data).ok_or(anyhow!("from_raw error"))?;
+  let image_buffer = RgbImage::from_raw(width as u32, height as u32, data)
+    .ok_or_else(|| anyhow!("from_raw error"))?;
   let img = DynamicImage::ImageRgb8(image_buffer);
 
   // リサイズとシャープ処理

@@ -106,15 +106,25 @@ impl PhotagApp {
     let original_image_path_lst =
       photodata::generate_original_image_path_lst(&import_photo_data, &original_image_folder_path)
         .unwrap();
+
+    // 起動時に処理する画像は固定されているため、
+    // このタイミングで画像を圧縮して保存すれば
+    // 次の起動まで何もしなくて良い
+    save_image(
+      &gui_photo_data_lst,
+      &original_image_path_lst,
+      &work_directory_path,
+    );
+
     PhotagApp {
       mode: Mode::EditPhotoData,
-      photo_id_lst: photo_id_lst,
-      gui_photo_data_lst: gui_photo_data_lst,
-      group_id_lst: group_id_lst,
-      gui_group_data_lst: gui_group_data_lst,
-      original_image_path_lst: original_image_path_lst,
-      input_json_path: input_json_path,
-      work_directory_path: work_directory_path,
+      photo_id_lst,
+      gui_photo_data_lst,
+      group_id_lst,
+      gui_group_data_lst,
+      original_image_path_lst,
+      input_json_path,
+      work_directory_path,
       now_id: String::new(),
       now_imgae_data_opt: None,
       dummy_group_data: photodata::make_dummy_gui_group_data(),
@@ -129,26 +139,18 @@ impl eframe::App for PhotagApp {
       gui_photo_data_lst,
       group_id_lst,
       gui_group_data_lst,
-      original_image_path_lst,
       input_json_path,
       work_directory_path,
       ..
     } = self;
     // JSONファイルを保存
     save_file(
-      &photo_id_lst,
-      &gui_photo_data_lst,
-      &group_id_lst,
-      &gui_group_data_lst,
-      &input_json_path,
-      &work_directory_path,
-    );
-
-    // 画像を圧縮して保存
-    save_image(
-      &gui_photo_data_lst,
-      &original_image_path_lst,
-      &work_directory_path,
+      photo_id_lst,
+      gui_photo_data_lst,
+      group_id_lst,
+      gui_group_data_lst,
+      input_json_path,
+      work_directory_path,
     );
 
     // trueのときはそのまま終了イベントが継続する
@@ -176,7 +178,6 @@ impl eframe::App for PhotagApp {
         Mode::EditPhotoData => {
           ui.heading("画像データ編集ページ");
           let keep_button = ui.button("保存").clicked();
-          let save_image_button = ui.button("画像書き出し").clicked();
           ui.heading("グループデータ編集ページ");
           let switch_button = ui.button("切り替え").clicked();
           if switch_button {
@@ -195,7 +196,7 @@ impl eframe::App for PhotagApp {
                 *mode = Mode::EditPhotoData;
                 *now_id = photo_id.clone();
                 let image_file_path = original_image_path_lst.get(now_id).unwrap();
-                let image_buf = image::compression(&image_file_path, 70.0, 600).unwrap();
+                let image_buf = image::compression(image_file_path, 70.0, 600).unwrap();
                 *now_imgae_data_opt = Some(image_buf);
               }
             }
@@ -203,27 +204,18 @@ impl eframe::App for PhotagApp {
           if keep_button {
             // JSONファイルを保存
             save_file(
-              &photo_id_lst,
-              &gui_photo_data_lst,
-              &group_id_lst,
-              &gui_group_data_lst,
-              &input_json_path,
-              &work_directory_path,
-            );
-          }
-          if save_image_button {
-            // 画像を圧縮して保存
-            save_image(
-              &gui_photo_data_lst,
-              &original_image_path_lst,
-              &work_directory_path,
+              photo_id_lst,
+              gui_photo_data_lst,
+              group_id_lst,
+              gui_group_data_lst,
+              input_json_path,
+              work_directory_path,
             );
           }
         }
         Mode::EditGroupData => {
           ui.heading("グループデータ作成ページ");
           let keep_button = ui.button("保存").clicked();
-          let save_image_button = ui.button("画像書き出し").clicked();
           ui.heading("画像データ編集ページ");
           let switch_button = ui.button("切り替え").clicked();
           if switch_button {
@@ -252,20 +244,12 @@ impl eframe::App for PhotagApp {
           if keep_button {
             // JSONファイルを保存
             save_file(
-              &photo_id_lst,
-              &gui_photo_data_lst,
-              &group_id_lst,
-              &gui_group_data_lst,
-              &input_json_path,
-              &work_directory_path,
-            );
-          }
-          if save_image_button {
-            // 画像を圧縮して保存
-            save_image(
-              &gui_photo_data_lst,
-              &original_image_path_lst,
-              &work_directory_path,
+              photo_id_lst,
+              gui_photo_data_lst,
+              group_id_lst,
+              gui_group_data_lst,
+              input_json_path,
+              work_directory_path,
             );
           }
         }
@@ -340,7 +324,7 @@ impl eframe::App for PhotagApp {
               });
               match now_imgae_data_opt {
                 Some(image_buf) => {
-                  let image = RetainedImage::from_image_bytes(&*now_id, &image_buf).unwrap();
+                  let image = RetainedImage::from_image_bytes(&*now_id, image_buf).unwrap();
                   image.show_size(ui, calculate_image_size(300.0, &image.size()));
                 }
                 None => (),
@@ -348,7 +332,7 @@ impl eframe::App for PhotagApp {
             });
             ui.label("グループへの登録");
             let mut group_check_lst =
-              make_group_check_lst(&now_id, &group_id_lst, &gui_group_data_lst);
+              make_group_check_lst(now_id, group_id_lst, gui_group_data_lst);
             egui::ScrollArea::vertical().show(ui, |ui| {
               for i in 0..group_check_lst.len() {
                 ui.horizontal(|ui| {
@@ -362,7 +346,7 @@ impl eframe::App for PhotagApp {
                 });
               }
             });
-            update_group_photo_id_lst(&now_id, &group_check_lst, gui_group_data_lst);
+            update_group_photo_id_lst(now_id, &group_check_lst, gui_group_data_lst);
             gui_photo_data_lst.insert(now_id.clone(), photo_data);
           }
         }
@@ -574,7 +558,7 @@ fn update_group_photo_id_lst(
       if !*is_check {
         photo_id_lst = photo_id_lst
           .iter()
-          .filter(|id| id.to_string() != photo_id.to_string())
+          .filter(|id| id.to_string() != *photo_id)
           .cloned()
           .collect::<Vec<String>>();
       }
@@ -609,7 +593,7 @@ fn save_image_compression_lazy(original_file_path: &str, output_path: &str) {
 /// convertコマンドを動かすだけ
 /// WindowsではWSLを経由してconvertコマンドを実行する
 fn save_image_compression_normal(original_file_path: &str, output_path: &str) {
-  let image_buf = image::compression(original_file_path, 80.0, 1024).unwrap();
+  let image_buf = image::compression(original_file_path, 85.0, 2048).unwrap();
   let mut file = File::create(output_path).unwrap();
   file.write_all(&image_buf).unwrap();
   file.flush().unwrap();
@@ -625,16 +609,16 @@ fn save_file(
   work_directory_path: &str,
 ) {
   // PhotoDataを保存
-  let photo_data_json_str = make_photo_data_json_str(&photo_id_lst, &gui_photo_data_lst);
+  let photo_data_json_str = make_photo_data_json_str(photo_id_lst, gui_photo_data_lst);
   let photo_data_json_path = format!("{}/photo_data.json", work_directory_path);
   save_json_str(photo_data_json_str, &photo_data_json_path);
   // GroupDataを保存
-  let group_data_json_str = make_group_data_json_str(&group_id_lst, &gui_group_data_lst);
+  let group_data_json_str = make_group_data_json_str(group_id_lst, gui_group_data_lst);
   let group_data_json_path = format!("{}/group_data.json", work_directory_path);
   save_json_str(group_data_json_str, &group_data_json_path);
   // ImportPhotoDataを保存
-  let group_data_json_str = make_import_photo_data_json_str(&photo_id_lst, &gui_photo_data_lst);
-  save_json_str(group_data_json_str, &input_json_path);
+  let group_data_json_str = make_import_photo_data_json_str(photo_id_lst, gui_photo_data_lst);
+  save_json_str(group_data_json_str, input_json_path);
 }
 
 /// 画像保存系
