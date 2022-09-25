@@ -346,7 +346,7 @@ impl eframe::App for PhotagApp {
                 });
               }
             });
-            update_group_photo_id_lst(now_id, &group_check_lst, gui_group_data_lst);
+            update_group_data(now_id, &group_check_lst, group_id_lst, gui_group_data_lst);
             gui_photo_data_lst.insert(now_id.clone(), photo_data);
           }
         }
@@ -544,11 +544,14 @@ fn make_group_check_lst(
 }
 
 /// checkboxへの入力を元にグループデータを更新する
-fn update_group_photo_id_lst(
+/// 新しく写真が追加されたグループを最新に持ってくるようにする
+fn update_group_data(
   photo_id: &str,
   check_lst: &[(String, bool)],
+  group_id_lst: &mut Vec<String>,
   gui_group_data_lst: &mut HashMap<String, GUIGroupData>,
 ) {
+  let mut update_group_id_lst = Vec::new(); // 変更があったグループを溜める
   for (group_id, is_check) in check_lst.iter() {
     let group_data = gui_group_data_lst.get(group_id).unwrap();
     let mut photo_id_lst = group_data.clone().photo_id_list;
@@ -565,8 +568,10 @@ fn update_group_photo_id_lst(
     } else {
       // IDが含まれていない場合
       // is_checkがtrueのときにIDを追加する
+      // ついでに
       if *is_check {
         photo_id_lst.push(photo_id.to_owned());
+        update_group_id_lst.push(group_id.clone());
       }
     }
     gui_group_data_lst.insert(
@@ -577,6 +582,13 @@ fn update_group_photo_id_lst(
       },
     );
   }
+  // 更新する
+  for group_id in group_id_lst.iter() {
+    if update_group_id_lst.iter().all(|id| id != group_id) {
+      update_group_id_lst.push(group_id.to_string())
+    }
+  }
+  *group_id_lst = update_group_id_lst;
 }
 
 /// 遅延読み込み用に使うかなり圧縮した画像を生成する
