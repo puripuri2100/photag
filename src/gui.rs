@@ -412,51 +412,53 @@ impl eframe::App for PhotagApp {
                 .collect();
               *now_id = String::new();
             }
-            let mut group_data = gui_group_data_lst.get(now_id).unwrap().clone();
-            ui.vertical(|ui| {
-              ui.set_width(500.0);
-              ui.horizontal(|ui| {
-                ui.label("グループID");
-                ui.text_edit_singleline(&mut group_data.group_id);
+            if !delete_button {
+              let mut group_data = gui_group_data_lst.get(now_id).unwrap().clone();
+              ui.vertical(|ui| {
+                ui.set_width(500.0);
+                ui.horizontal(|ui| {
+                  ui.label("グループID");
+                  ui.text_edit_singleline(&mut group_data.group_id);
+                });
+                ui.horizontal(|ui| {
+                  ui.label("タイトル（必須）");
+                  ui.text_edit_singleline(&mut group_data.title);
+                });
+                ui.horizontal(|ui| {
+                  ui.label("説明（必須）");
+                  ui.text_edit_singleline(&mut group_data.description);
+                });
+                ui.horizontal(|ui| {
+                  ui.label("撮影地点");
+                  ui.text_edit_singleline(&mut group_data.location);
+                });
+                ui.horizontal(|ui| {
+                  ui.label("撮影年月日");
+                  ui.text_edit_singleline(&mut group_data.year);
+                  ui.label("/");
+                  ui.text_edit_singleline(&mut group_data.month);
+                  ui.label("/");
+                  ui.text_edit_singleline(&mut group_data.day);
+                });
+                ui.horizontal(|ui| {
+                  ui.label("撮影時刻");
+                  ui.text_edit_singleline(&mut group_data.hour);
+                  ui.label(":");
+                  ui.text_edit_singleline(&mut group_data.minutes);
+                });
               });
-              ui.horizontal(|ui| {
-                ui.label("タイトル（必須）");
-                ui.text_edit_singleline(&mut group_data.title);
+              ui.heading("グループに含まれる画像");
+              egui::ScrollArea::vertical().show(ui, |ui| {
+                for photo_id in group_data.photo_id_list.iter() {
+                  let photo_data = gui_photo_data_lst.get(photo_id).unwrap();
+                  ui.label(format!(
+                    "・{}({})  「{}」",
+                    photo_data.photo_id, photo_data.file_name, photo_data.alt
+                  ));
+                }
               });
-              ui.horizontal(|ui| {
-                ui.label("説明（必須）");
-                ui.text_edit_singleline(&mut group_data.description);
-              });
-              ui.horizontal(|ui| {
-                ui.label("撮影地点");
-                ui.text_edit_singleline(&mut group_data.location);
-              });
-              ui.horizontal(|ui| {
-                ui.label("撮影年月日");
-                ui.text_edit_singleline(&mut group_data.year);
-                ui.label("/");
-                ui.text_edit_singleline(&mut group_data.month);
-                ui.label("/");
-                ui.text_edit_singleline(&mut group_data.day);
-              });
-              ui.horizontal(|ui| {
-                ui.label("撮影時刻");
-                ui.text_edit_singleline(&mut group_data.hour);
-                ui.label(":");
-                ui.text_edit_singleline(&mut group_data.minutes);
-              });
-            });
-            ui.heading("グループに含まれる画像");
-            egui::ScrollArea::vertical().show(ui, |ui| {
-              for photo_id in group_data.photo_id_list.iter() {
-                let photo_data = gui_photo_data_lst.get(photo_id).unwrap();
-                ui.label(format!(
-                  "・{}({})  「{}」",
-                  photo_data.photo_id, photo_data.file_name, photo_data.alt
-                ));
-              }
-            });
-            gui_group_data_lst.insert(now_id.clone(), group_data);
+              gui_group_data_lst.insert(now_id.clone(), group_data);
+            }
           }
         }
       }
