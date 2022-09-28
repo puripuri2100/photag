@@ -334,10 +334,9 @@ impl eframe::App for PhotagApp {
                 ui.label("mm");
               });
               // サムネイル生成
-              if let Some(image_buf) = thumbnail_lst.get(now_id) {
-                let image = RetainedImage::from_image_bytes(&*now_id, image_buf).unwrap();
-                image.show_size(ui, calculate_image_size(300.0, &image.size()));
-              }
+              let image_buf = thumbnail_lst.get(now_id).unwrap();
+              let image = RetainedImage::from_image_bytes(&*now_id, image_buf).unwrap();
+              image.show_size(ui, calculate_image_size(300.0, &image.size()));
             });
             ui.label("グループへの登録");
             let mut group_check_lst =
@@ -460,10 +459,13 @@ impl eframe::App for PhotagApp {
               egui::ScrollArea::vertical().show(ui, |ui| {
                 for photo_id in group_data.photo_id_list.iter() {
                   let photo_data = gui_photo_data_lst.get(photo_id).unwrap();
-                  ui.label(format!(
-                    "・{}({})  「{}」",
-                    photo_data.photo_id, photo_data.file_name, photo_data.alt
-                  ));
+                  ui.horizontal(|ui| {
+                    ui.label(format!("・{}（{}）", photo_data.photo_id, photo_data.alt));
+                    let thumbnail = thumbnail_lst.get(photo_id).unwrap();
+                    let thumbnail = image::compression(thumbnail, 65.0, 300).unwrap();
+                    let image = RetainedImage::from_image_bytes(&*now_id, &thumbnail).unwrap();
+                    image.show_size(ui, calculate_image_size(30.0, &image.size()));
+                  });
                 }
               });
               gui_group_data_lst.insert(now_id.clone(), group_data);
