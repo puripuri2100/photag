@@ -3,9 +3,9 @@ use eframe::{
   egui::{FontData, FontDefinitions, FontFamily},
 };
 use egui_extras::RetainedImage;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::collections::HashMap;
 
 use crate::image;
 use crate::photodata::{self, GUIGroupData, GUIPhotoData};
@@ -33,8 +33,6 @@ pub struct PhotagApp {
   pub work_directory_path: String,
   /// 今現在編集しようとしているIDの情報を格納する（画像・グループ共通）
   pub now_id: String,
-  /// 現在表示する画像のデータ
-  pub now_imgae_data_opt: Option<Vec<u8>>,
   /// 新規作成するときのためのダミーのグループデータ
   pub dummy_group_data: photodata::GUIGroupData,
 }
@@ -145,7 +143,6 @@ impl PhotagApp {
       input_json_path,
       work_directory_path,
       now_id: String::new(),
-      now_imgae_data_opt: None,
       dummy_group_data: photodata::make_dummy_gui_group_data(),
     }
   }
@@ -185,7 +182,6 @@ impl eframe::App for PhotagApp {
       gui_group_data_lst,
       thumbnail_lst,
       now_id,
-      now_imgae_data_opt,
       input_json_path,
       work_directory_path,
       ..
@@ -214,8 +210,6 @@ impl eframe::App for PhotagApp {
               if ui.add(button).clicked() {
                 *mode = Mode::EditPhotoData;
                 *now_id = photo_id.clone();
-                let thumbnail = thumbnail_lst.get(now_id).unwrap().to_vec();
-                *now_imgae_data_opt = Some(thumbnail);
               }
             }
           });
@@ -280,7 +274,6 @@ impl eframe::App for PhotagApp {
         group_id_lst,
         gui_group_data_lst,
         now_id,
-        now_imgae_data_opt,
         dummy_group_data,
         ..
       } = self;
@@ -340,13 +333,11 @@ impl eframe::App for PhotagApp {
                 ui.text_edit_singleline(&mut photo_data.focal_length);
                 ui.label("mm");
               });
-              match now_imgae_data_opt {
-                Some(image_buf) => {
-                  let image = RetainedImage::from_image_bytes(&*now_id, image_buf).unwrap();
-                  image.show_size(ui, calculate_image_size(300.0, &image.size()));
-                }
-                None => (),
-              };
+              // サムネイル生成
+              if let Some(image_buf) = thumbnail_lst.get(now_id) {
+                let image = RetainedImage::from_image_bytes(&*now_id, image_buf).unwrap();
+                image.show_size(ui, calculate_image_size(300.0, &image.size()));
+              }
             });
             ui.label("グループへの登録");
             let mut group_check_lst =
