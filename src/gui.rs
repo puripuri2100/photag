@@ -3,9 +3,9 @@ use eframe::{
   egui::{FontData, FontDefinitions, FontFamily},
 };
 use egui_extras::RetainedImage;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
+use std::collections::HashMap;
 
 use crate::image;
 use crate::photodata::{self, GUIGroupData, GUIPhotoData};
@@ -25,7 +25,7 @@ pub struct PhotagApp {
   /// idとグループのデータのペア
   pub gui_group_data_lst: HashMap<String, photodata::GUIGroupData>,
   /// idと現像後の画像への絶対pathのペアを保持する
-  pub original_image_path_lst: HashMap<String, String>,
+  pub thumbnail_lst: HashMap<String, Vec<u8>>,
   /// 現像時に手で作ったJSONファイルへのpath
   pub input_json_path: String,
   /// 画質を落とした画像を出力したり、グループや写真のデータのJSONファイルを出力したり
@@ -77,11 +77,11 @@ impl PhotagApp {
     work_directory_path: String,
   ) -> Self {
     setup_japanese_fonts(&cc.egui_ctx);
-    let import_photo_data = photodata::load_import_json_file(&input_json_path).unwrap();
+    let import_photo_data_lst = photodata::load_import_json_file(&input_json_path).unwrap();
     let photo_data_opt = photodata::load_photo_data_opt(&work_directory_path);
     let (photo_id_lst, photo_data_lst) = photodata::merge_photo_data_based_and_import_photo_data(
       &photo_data_opt,
-      &import_photo_data,
+      &import_photo_data_lst,
       &original_image_folder_path,
     )
     .unwrap();
@@ -103,18 +103,37 @@ impl PhotagApp {
         photodata::group_data_to_gui_group_data(group_data.clone()),
       );
     }
-    let original_image_path_lst =
-      photodata::generate_original_image_path_lst(&import_photo_data, &original_image_folder_path)
-        .unwrap();
-
-    // 起動時に処理する画像は固定されているため、
-    // このタイミングで画像を圧縮して保存すれば
-    // 次の起動まで何もしなくて良い
-    save_image(
-      &gui_photo_data_lst,
-      &original_image_path_lst,
-      &work_directory_path,
-    );
+    let mut thumbnail_lst = HashMap::new();
+    for import_photo_data in import_photo_data_lst.iter() {
+      // 画像ファイルは重いので、アクセスする階数を一回だけにしたい
+      let raw_data = image::open_file(&format!(
+        "{}/{}",
+        original_image_folder_path, import_photo_data.file_name
+      ))
+      .unwrap();
+      // 起動時に処理する画像は固定されているため、
+      // このタイミングで画像を圧縮して保存すれば
+      // 次の起動まで何もしなくて良い
+      save_image_compression_lazy(
+        &raw_data,
+        &format!(
+          "{}/images/lazy/{}.JPG",
+          work_directory_path, import_photo_data.id
+        ),
+      );
+      save_image_compression_normal(
+        &raw_data,
+        &format!(
+          "{}/images/normal/{}.JPG",
+          work_directory_path, import_photo_data.id
+        ),
+      );
+      // サムネイル用に圧縮したデータを生成して登録
+      thumbnail_lst.insert(
+        import_photo_data.id.to_string(),
+        image::compression(&raw_data, 70.0, 600).unwrap(),
+      );
+    }
 
     PhotagApp {
       mode: Mode::EditPhotoData,
@@ -122,7 +141,7 @@ impl PhotagApp {
       gui_photo_data_lst,
       group_id_lst,
       gui_group_data_lst,
-      original_image_path_lst,
+      thumbnail_lst,
       input_json_path,
       work_directory_path,
       now_id: String::new(),
@@ -164,7 +183,7 @@ impl eframe::App for PhotagApp {
       gui_photo_data_lst,
       group_id_lst,
       gui_group_data_lst,
-      original_image_path_lst,
+      thumbnail_lst,
       now_id,
       now_imgae_data_opt,
       input_json_path,
@@ -195,9 +214,8 @@ impl eframe::App for PhotagApp {
               if ui.add(button).clicked() {
                 *mode = Mode::EditPhotoData;
                 *now_id = photo_id.clone();
-                let image_file_path = original_image_path_lst.get(now_id).unwrap();
-                let image_buf = image::compression(image_file_path, 70.0, 600).unwrap();
-                *now_imgae_data_opt = Some(image_buf);
+                let thumbnail = thumbnail_lst.get(now_id).unwrap().to_vec();
+                *now_imgae_data_opt = Some(thumbnail);
               }
             }
           });
@@ -596,8 +614,8 @@ fn update_group_data(
 /// 遅延読み込み用に使うかなり圧縮した画像を生成する
 /// convertコマンドを動かすだけ
 /// WindowsではWSLを経由してconvertコマンドを実行する
-fn save_image_compression_lazy(original_file_path: &str, output_path: &str) {
-  let image_buf = image::compression(original_file_path, 75.0, 32).unwrap();
+fn save_image_compression_lazy(original_raw_data: &[u8], output_path: &str) {
+  let image_buf = image::compression(original_raw_data, 75.0, 32).unwrap();
   let mut file = File::create(output_path).unwrap();
   file.write_all(&image_buf).unwrap();
   file.flush().unwrap();
@@ -606,8 +624,8 @@ fn save_image_compression_lazy(original_file_path: &str, output_path: &str) {
 /// 実際に表示するためのやや圧縮した画像を生成する
 /// convertコマンドを動かすだけ
 /// WindowsではWSLを経由してconvertコマンドを実行する
-fn save_image_compression_normal(original_file_path: &str, output_path: &str) {
-  let image_buf = image::compression(original_file_path, 85.0, 2048).unwrap();
+fn save_image_compression_normal(original_raw_data: &[u8], output_path: &str) {
+  let image_buf = image::compression(original_raw_data, 85.0, 2048).unwrap();
   let mut file = File::create(output_path).unwrap();
   file.write_all(&image_buf).unwrap();
   file.flush().unwrap();
@@ -633,23 +651,4 @@ fn save_file(
   // ImportPhotoDataを保存
   let group_data_json_str = make_import_photo_data_json_str(photo_id_lst, gui_photo_data_lst);
   save_json_str(group_data_json_str, input_json_path);
-}
-
-/// 画像保存系
-fn save_image(
-  gui_photo_data_lst: &HashMap<String, GUIPhotoData>,
-  original_image_path_lst: &HashMap<String, String>,
-  work_directory_path: &str,
-) {
-  for (photo_id, photo_data) in gui_photo_data_lst.iter() {
-    let original_image_path = original_image_path_lst.get(photo_id).unwrap();
-    save_image_compression_lazy(
-      original_image_path,
-      &format!("{}{}", work_directory_path, photo_data.photo_lazy_src),
-    );
-    save_image_compression_normal(
-      original_image_path,
-      &format!("{}{}", work_directory_path, photo_data.photo_src),
-    );
-  }
 }

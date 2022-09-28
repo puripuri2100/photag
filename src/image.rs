@@ -3,11 +3,13 @@ use image::{self, imageops::FilterType::Lanczos3, DynamicImage, RgbImage};
 use mozjpeg::{ColorSpace, Compress, Decompress, Marker, ScanMode, ALL_MARKERS};
 use std::fs;
 
-pub fn compression(path: &str, quality: f32, size: u32) -> Result<Vec<u8>> {
-  // linux なら Decompress::with_markers(ALL_MARKERS)
-  //            .from_path("/home/benki/Downloads/0.jpg")?; が使える
+pub fn open_file(path: &str) -> Result<Vec<u8>> {
   let raw_data = fs::read(path)?;
-  let decomp = Decompress::with_markers(ALL_MARKERS).from_mem(&raw_data)?;
+  Ok(raw_data)
+}
+
+pub fn compression(raw_data: &[u8], quality: f32, size: u32) -> Result<Vec<u8>> {
+  let decomp = Decompress::with_markers(ALL_MARKERS).from_mem(raw_data)?;
 
   #[allow(clippy::needless_collect)]
   // markers の中に Exif 情報がある

@@ -176,14 +176,14 @@ pub fn photo_data_to_gui_photo_data(photo_data: PhotoData) -> GUIPhotoData {
 pub struct ImportPhotoData {
   /// 書きだした画像のpath
   /// originalフォルダ内にあるはず
-  file_name: String,
+  pub file_name: String,
   /// 一意性のあるIDを付けてもらう
   /// URLなどにも使われることになる
-  id: String,
+  pub id: String,
   /// 画像の説明
-  alt: String,
+  pub alt: String,
   /// 撮影場所
-  location: String,
+  pub location: String,
 }
 
 /// 作成したデータを元のJSONファイルに還元するための変換
@@ -295,20 +295,6 @@ pub fn merge_photo_data_based_and_import_photo_data(
     })
   }
   Ok((photo_id_lst, photo_data_lst))
-}
-
-pub fn generate_original_image_path_lst(
-  import_photo_data_lst: &[ImportPhotoData],
-  original_path: &str,
-) -> Result<HashMap<String, String>> {
-  let mut map = HashMap::new();
-  for import_photo_data in import_photo_data_lst.iter().cloned() {
-    map.insert(
-      import_photo_data.id,
-      format!("{}/{}", original_path, import_photo_data.file_name),
-    );
-  }
-  Ok(map)
 }
 
 /// Exifデータの中で必要なもの
