@@ -254,8 +254,8 @@ pub fn merge_photo_data_based_and_import_photo_data(
         Ok(minimal_exif_data) => PhotoData {
           file_name: import_photo_data.file_name.clone(),
           photo_id: import_photo_data.id.clone(),
-          photo_src: format!("/images/normal/{}", import_photo_data.id),
-          photo_lazy_src: format!("/images/lazy/{}", import_photo_data.id),
+          photo_src: format!("/images/normal/{}.JPG", import_photo_data.id),
+          photo_lazy_src: format!("/images/lazy/{}.JPG", import_photo_data.id),
           alt: import_photo_data.alt.clone(),
           title: None,
           year: minimal_exif_data.year,
@@ -274,8 +274,8 @@ pub fn merge_photo_data_based_and_import_photo_data(
         Err(_) => PhotoData {
           file_name: import_photo_data.file_name.clone(),
           photo_id: String::new(),
-          photo_src: format!("/images/normal/{}", import_photo_data.id),
-          photo_lazy_src: format!("/images/lazy/{}", import_photo_data.id),
+          photo_src: format!("/images/normal/{}.JPG", import_photo_data.id),
+          photo_lazy_src: format!("/images/lazy/{}.JPG", import_photo_data.id),
           alt: import_photo_data.alt.clone(),
           title: None,
           year: None,
@@ -295,6 +295,106 @@ pub fn merge_photo_data_based_and_import_photo_data(
     })
   }
   Ok((photo_id_lst, photo_data_lst))
+}
+
+/// 事前に生成されていた`GUIPhotoData`と`GUIGroupData`と、
+/// 現像時に手動で作成した元の画像ファイル名などが入る`ImportPhotoData`と、
+/// 元画像が置かれたフォルダへのpathを受け取って、
+/// その中身を良い感じに合成して`ImportPhotoData`の中身を反映する
+pub fn merge_gui_photo_data_based_and_import_photo_data(
+  gui_photo_data_lst: &mut HashMap<String, GUIPhotoData>,
+  gui_group_data_lst: &mut HashMap<String, GUIGroupData>,
+  import_photo_data_lst: &[ImportPhotoData],
+  original_path: &str,
+) -> (HashMap<String, GUIPhotoData>, HashMap<String, GUIGroupData>) {
+  // photo_dataの更新
+  for import_photo_data in import_photo_data_lst.iter() {
+    let gui_photo_data_opt = gui_photo_data_lst.get(&import_photo_data.id);
+    let data = match gui_photo_data_opt {
+      Some(gui_photo_data) => {
+        // 良い感じに反映させる
+        GUIPhotoData {
+          file_name: import_photo_data.file_name.clone(),
+          photo_id: import_photo_data.id.clone(),
+          photo_src: format!("/images/normal/{}.JPG", import_photo_data.id),
+          photo_lazy_src: format!("/images/lazy/{}.JPG", import_photo_data.id),
+          alt: import_photo_data.alt.clone(),
+          location: import_photo_data.location.clone(),
+          ..gui_photo_data.clone()
+        }
+      }
+      None => {
+        // 新規データ
+        match parse_exif_data(&format!(
+          "{}/{}",
+          original_path,
+          import_photo_data.clone().file_name
+        )) {
+          Ok(minimal_exif_data) => GUIPhotoData {
+            file_name: import_photo_data.file_name.clone(),
+            photo_id: import_photo_data.id.clone(),
+            photo_src: format!("/images/normal/{}.JPG", import_photo_data.id),
+            photo_lazy_src: format!("/images/lazy/{}.JPG", import_photo_data.id),
+            alt: import_photo_data.alt.clone(),
+            title: String::default(),
+            year: minimal_exif_data.year.unwrap_or_default(),
+            month: minimal_exif_data.month.unwrap_or_default(),
+            day: minimal_exif_data.day.unwrap_or_default(),
+            hour: minimal_exif_data.hour.unwrap_or_default(),
+            minutes: minimal_exif_data.minutes.unwrap_or_default(),
+            body: minimal_exif_data.body.unwrap_or_default(),
+            lens: minimal_exif_data.lens.unwrap_or_default(),
+            time: minimal_exif_data.time.unwrap_or_default(),
+            focal_length: minimal_exif_data.focal_length.unwrap_or_default(),
+            f_value: minimal_exif_data.f_value.unwrap_or_default(),
+            iso: minimal_exif_data.iso.unwrap_or_default(),
+            location: import_photo_data.location.clone(),
+          },
+          Err(_) => GUIPhotoData {
+            file_name: import_photo_data.file_name.clone(),
+            photo_id: String::new(),
+            photo_src: format!("/images/normal/{}.JPG", import_photo_data.id),
+            photo_lazy_src: format!("/images/lazy/{}.JPG", import_photo_data.id),
+            alt: import_photo_data.alt.clone(),
+            title: String::default(),
+            year: String::default(),
+            month: String::default(),
+            day: String::default(),
+            hour: String::default(),
+            minutes: String::default(),
+            body: String::default(),
+            lens: String::default(),
+            time: String::default(),
+            focal_length: String::default(),
+            f_value: String::default(),
+            iso: String::default(),
+            location: import_photo_data.location.clone(),
+          },
+        }
+      }
+    };
+    gui_photo_data_lst.insert(import_photo_data.id.to_string(), data);
+  }
+  // group_dataの更新
+  // photo_id_listの中身を検索してIDが存在しているかを確認する
+  // IDが無くなっていれば削除する
+  let mut new_gui_group_data_lst = HashMap::new();
+  for (id, gui_group_data) in gui_group_data_lst.clone().iter() {
+    let photo_id_list = gui_group_data
+      .photo_id_list
+      .iter()
+      .filter(|id| gui_photo_data_lst.get(*id).is_some())
+      .cloned()
+      .collect::<Vec<String>>();
+    new_gui_group_data_lst.insert(
+      id.to_string(),
+      GUIGroupData {
+        photo_id_list,
+        ..gui_group_data.clone()
+      },
+    );
+  }
+  (gui_photo_data_lst.clone(), new_gui_group_data_lst)
 }
 
 /// Exifデータの中で必要なもの

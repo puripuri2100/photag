@@ -8,6 +8,7 @@ description = "web公開をする画像にidを振って撮影データなどを
 
 [dependencies]
 anyhow = "1.0.58"
+chrono = {version = "0.4.22", features = ["serde"]}
 clap = { version = "3.2.14", features = ["derive"] }
 eframe = {git = "https://github.com/emilk/egui", rev="12dc61e"}
 egui_extras = { git = "https://github.com/emilk/egui", rev="12dc61e", features = ["image"] }

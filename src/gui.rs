@@ -1,3 +1,4 @@
+use chrono::{DateTime, FixedOffset};
 use eframe::{
   egui,
   egui::{FontData, FontDefinitions, FontFamily},
@@ -9,6 +10,7 @@ use std::io::Write;
 
 use crate::image;
 use crate::photodata::{self, GUIGroupData, GUIPhotoData};
+use crate::save;
 
 #[derive(Clone, Debug)]
 pub struct PhotagApp {
@@ -28,6 +30,8 @@ pub struct PhotagApp {
   pub thumbnail_lst: HashMap<String, Vec<u8>>,
   /// 現像時に手で作ったJSONファイルへのpath
   pub input_json_path: String,
+  /// オリジナル画像が入っているフォルダへのpath
+  pub original_image_folder_path: String,
   /// 画質を落とした画像を出力したり、グループや写真のデータのJSONファイルを出力したり
   /// するためのフォルダへのpath
   pub work_directory_path: String,
@@ -35,6 +39,12 @@ pub struct PhotagApp {
   pub now_id: String,
   /// 新規作成するときのためのダミーのグループデータ
   pub dummy_group_data: photodata::GUIGroupData,
+  /// 画像を保存した時刻を保持する
+  pub image_save_time_lst: HashMap<String, DateTime<FixedOffset>>,
+  /// JSONファイル等を書き出した時刻を保持する
+  pub json_save_time: DateTime<FixedOffset>,
+  /// 画像を書き出した時刻を保持する
+  pub image_save_time: DateTime<FixedOffset>,
 }
 
 /// メイン画面に表示するものを決めるためのモード情報
@@ -101,37 +111,92 @@ impl PhotagApp {
         photodata::group_data_to_gui_group_data(group_data.clone()),
       );
     }
+    let mut time_info_lst = save::get_time_info_lst(&work_directory_path);
     let mut thumbnail_lst = HashMap::new();
     for import_photo_data in import_photo_data_lst.iter() {
-      // 画像ファイルは重いので、アクセスする階数を一回だけにしたい
-      let raw_data = image::open_file(&format!(
+      // 画像ファイルは重いので、アクセスする階数をできるだけ減らしたい
+      let image_path = format!(
         "{}/{}",
         original_image_folder_path, import_photo_data.file_name
-      ))
-      .unwrap();
+      );
+      // ファイルのバイナリデータを取り出す
+      let raw_data = image::open_file(&image_path).unwrap();
       // 起動時に処理する画像は固定されているため、
       // このタイミングで画像を圧縮して保存すれば
       // 次の起動まで何もしなくて良い
-      save_image_compression_lazy(
-        &raw_data,
-        &format!(
-          "{}/images/lazy/{}.JPG",
-          work_directory_path, import_photo_data.id
-        ),
-      );
-      save_image_compression_normal(
-        &raw_data,
-        &format!(
-          "{}/images/normal/{}.JPG",
-          work_directory_path, import_photo_data.id
-        ),
-      );
+      if let Some(time) = time_info_lst.get(&import_photo_data.id) {
+        // 書き出し時刻がある場合の処理
+        let time_stamp = save::get_file_timestamp(&image_path);
+        match time_stamp {
+          Some(time_stamp) => {
+            if time < &time_stamp {
+              // 画像のタイムスタンプの方が遅いため、新規画像と判定して書き出し処理を行う
+              save_image_compression_lazy(
+                &raw_data,
+                &format!(
+                  "{}/images/lazy/{}.JPG",
+                  work_directory_path, import_photo_data.id
+                ),
+              );
+              save_image_compression_normal(
+                &raw_data,
+                &format!(
+                  "{}/images/normal/{}.JPG",
+                  work_directory_path, import_photo_data.id
+                ),
+              );
+              let now = save::get_now();
+              time_info_lst.insert(import_photo_data.id.to_string(), now);
+            }
+          }
+          None => {
+            // タイムスタンプが無いので念のため書き出す
+            // 画像のタイムスタンプの方が遅いため、新規画像と判定して書き出し処理を行う
+            save_image_compression_lazy(
+              &raw_data,
+              &format!(
+                "{}/images/lazy/{}.JPG",
+                work_directory_path, import_photo_data.id
+              ),
+            );
+            save_image_compression_normal(
+              &raw_data,
+              &format!(
+                "{}/images/normal/{}.JPG",
+                work_directory_path, import_photo_data.id
+              ),
+            );
+            let now = save::get_now();
+            time_info_lst.insert(import_photo_data.id.to_string(), now);
+          }
+        }
+      } else {
+        // 書き出し時刻がないため「新規画像」と認定して書き出し処理を行う
+        save_image_compression_lazy(
+          &raw_data,
+          &format!(
+            "{}/images/lazy/{}.JPG",
+            work_directory_path, import_photo_data.id
+          ),
+        );
+        save_image_compression_normal(
+          &raw_data,
+          &format!(
+            "{}/images/normal/{}.JPG",
+            work_directory_path, import_photo_data.id
+          ),
+        );
+        let now = save::get_now();
+        time_info_lst.insert(import_photo_data.id.to_string(), now);
+      };
       // サムネイル用に圧縮したデータを生成して登録
       thumbnail_lst.insert(
         import_photo_data.id.to_string(),
         image::compression(&raw_data, 70.0, 600).unwrap(),
       );
     }
+
+    let now = save::get_now();
 
     PhotagApp {
       mode: Mode::EditPhotoData,
@@ -141,14 +206,19 @@ impl PhotagApp {
       gui_group_data_lst,
       thumbnail_lst,
       input_json_path,
+      original_image_folder_path,
       work_directory_path,
       now_id: String::new(),
       dummy_group_data: photodata::make_dummy_gui_group_data(),
+      image_save_time_lst: time_info_lst,
+      json_save_time: now,
+      image_save_time: now,
     }
   }
 }
 
 impl eframe::App for PhotagApp {
+  // 終了時のイベント
   fn on_close_event(&mut self) -> bool {
     let Self {
       photo_id_lst,
@@ -157,6 +227,7 @@ impl eframe::App for PhotagApp {
       gui_group_data_lst,
       input_json_path,
       work_directory_path,
+      image_save_time_lst,
       ..
     } = self;
     // JSONファイルを保存
@@ -168,6 +239,8 @@ impl eframe::App for PhotagApp {
       input_json_path,
       work_directory_path,
     );
+    // ファイルの保存時刻の情報を保存
+    save::save_time_info_lst(work_directory_path, image_save_time_lst).unwrap();
 
     // trueのときはそのまま終了イベントが継続する
     true
@@ -183,9 +256,120 @@ impl eframe::App for PhotagApp {
       thumbnail_lst,
       now_id,
       input_json_path,
+      original_image_folder_path,
       work_directory_path,
+      image_save_time_lst,
+      json_save_time,
+      image_save_time,
       ..
     } = self;
+
+    let now = save::get_now();
+    if save::time_add_sec(*json_save_time, save::SAVE_JSON_DIFF_TIME) > now {
+      // 一定時間が経過したので、JSONファイルの読み込み等を行って更新が無いかを確認する
+      // 更新があった場合、データのアップデートと新規保存を行う
+      match save::get_file_timestamp(input_json_path) {
+        Some(timestamp) => {
+            let import_photo_data_lst = photodata::load_import_json_file(input_json_path).unwrap();
+            let (new_gui_photo_data_lst, new_gui_group_data_lst) =
+              photodata::merge_gui_photo_data_based_and_import_photo_data(
+                gui_photo_data_lst,
+                gui_group_data_lst,
+                &import_photo_data_lst,
+                original_image_folder_path,
+              );
+            // JSONファイルを保存
+            save_file(
+              photo_id_lst,
+              &new_gui_photo_data_lst,
+              group_id_lst,
+              &new_gui_group_data_lst,
+              input_json_path,
+              work_directory_path,
+            );
+        }
+        None => {
+          // JSONファイルを保存
+          save_file(
+            photo_id_lst,
+            gui_photo_data_lst,
+            group_id_lst,
+            gui_group_data_lst,
+            input_json_path,
+            work_directory_path,
+          );
+        }
+      }
+      *json_save_time = save::get_now();
+    }
+
+    if save::time_add_sec(*image_save_time, save::SAVE_IMAGE_DIFF_TIME) > now {
+      // 一定時間が経過したので、画像ファイルに更新が無いかを確認する
+      // 更新があった場合、当該ファイルの書き出し処理も行う
+      for (id, gui_photo_data) in gui_photo_data_lst.iter() {
+        let image_path = format!(
+          "{}/{}",
+          original_image_folder_path, gui_photo_data.file_name
+        );
+        if let Some(time) = image_save_time_lst.get(&gui_photo_data.photo_id) {
+          // 書き出し時刻がある場合の処理
+          let time_stamp = save::get_file_timestamp(&image_path);
+          match time_stamp {
+            Some(time_stamp) => {
+              if time < &time_stamp {
+                // 画像のタイムスタンプの方が遅いため、新規画像と判定して書き出し処理を行う
+                let raw_data = thumbnail_lst.get(id).unwrap();
+                save_image_compression_lazy(
+                  raw_data,
+                  &format!("{}/images/lazy/{}.JPG", work_directory_path, id),
+                );
+                save_image_compression_normal(
+                  raw_data,
+                  &format!("{}/images/normal/{}.JPG", work_directory_path, id),
+                );
+                let now = save::get_now();
+                image_save_time_lst.insert(id.to_string(), now);
+              }
+            }
+            None => {
+              // タイムスタンプが無い・ファイルが無いので念のため書き出す
+              // 画像のタイムスタンプの方が遅いため、新規画像と判定して書き出し処理を行う
+              let raw_data = thumbnail_lst.get(id).unwrap();
+              save_image_compression_lazy(
+                raw_data,
+                &format!("{}/images/lazy/{}.JPG", work_directory_path, id),
+              );
+              save_image_compression_normal(
+                raw_data,
+                &format!("{}/images/normal/{}.JPG", work_directory_path, id),
+              );
+              let now = save::get_now();
+              image_save_time_lst.insert(id.to_string(), now);
+            }
+          }
+        } else {
+          // 書き出し時刻がないため「新規画像」と認定して書き出し処理を行う
+          let raw_data = image::open_file(&image_path).unwrap();
+          save_image_compression_lazy(
+            &raw_data,
+            &format!("{}/images/lazy/{}.JPG", work_directory_path, id),
+          );
+          save_image_compression_normal(
+            &raw_data,
+            &format!("{}/images/normal/{}.JPG", work_directory_path, id),
+          );
+          thumbnail_lst.insert(
+            id.to_string(),
+            image::compression(&raw_data, 70.0, 600).unwrap(),
+          );
+          let now = save::get_now();
+          image_save_time_lst.insert(id.to_string(), now);
+        };
+      }
+      // ファイルの保存時刻の情報を保存
+      save::save_time_info_lst(work_directory_path, image_save_time_lst).unwrap();
+      *image_save_time = save::get_now();
+    }
 
     egui::SidePanel::left("side_panel")
       .min_width(50.0)
@@ -223,6 +407,9 @@ impl eframe::App for PhotagApp {
               input_json_path,
               work_directory_path,
             );
+            // ファイルの保存時刻の情報を保存
+            save::save_time_info_lst(work_directory_path, image_save_time_lst).unwrap();
+            *json_save_time = save::get_now();
           }
         }
         Mode::EditGroupData => {
@@ -263,6 +450,9 @@ impl eframe::App for PhotagApp {
               input_json_path,
               work_directory_path,
             );
+            // ファイルの保存時刻の情報を保存
+            save::save_time_info_lst(work_directory_path, image_save_time_lst).unwrap();
+            *json_save_time = save::get_now();
           }
         }
       });

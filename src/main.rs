@@ -5,6 +5,7 @@ use clap::Parser;
 mod gui;
 mod image;
 mod photodata;
+mod save;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
